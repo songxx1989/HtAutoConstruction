@@ -1,0 +1,38 @@
+<idea-plugin>
+    <id>net.huatech.autoconstruction</id>
+    <name>华腾自动构建助手</name>
+    <version>0.0.1</version>
+    <vendor email="support@huatech.net" url="http://huatech.net/">HuaTech</vendor>
+
+    <description><![CDATA[
+      自动构建项目
+    ]]></description>
+
+    <change-notes><![CDATA[
+      Add change notes here.<br>
+      <em>most HTML tags may be used</em>
+    ]]>
+    </change-notes>
+
+    <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
+    <idea-version since-build="173.0"/>
+
+    <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
+         on how to target different products -->
+    <!-- uncomment to enable plugin in all products
+    <depends>com.intellij.modules.lang</depends>
+    -->
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Add your extensions here -->
+    </extensions>
+
+    <actions>
+        <!-- Add your actions here -->
+        <group id="MyPlugin.HuaTech" text="Hu_aTech" description="华腾科技">
+            <add-to-group group-id="MainMenu" anchor="last"></add-to-group>
+            <action id="net.huatech.autoconstruction.AutoConstruction" class="net.huatech.autoconstruction.AutoConstruction" text="Auto _Construction" description="自动构建项目"></action>
+        </group>
+    </actions>
+
+</idea-plugin>
