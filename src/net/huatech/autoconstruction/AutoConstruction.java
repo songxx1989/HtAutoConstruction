@@ -4,22 +4,24 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.project.Project;
-import org.dom4j.Document;
-import org.dom4j.DocumentHelper;
-import org.dom4j.Element;
-import org.dom4j.Node;
-import org.dom4j.io.OutputFormat;
-import org.dom4j.io.SAXReader;
-import org.dom4j.io.XMLWriter;
+import org.jdom.Document;
+import org.jdom.Element;
+import org.jdom.JDOMException;
+import org.jdom.input.SAXBuilder;
+import org.jdom.output.XMLOutputter;
+import org.jdom.xpath.XPath;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.io.*;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
+
 public class AutoConstruction extends AnAction {
+    // 配置项
+    // 1 tomcat
+    String TOMCAT_NAME = "Tomcat 6.0.9";
+
     public AutoConstruction() {
         super("auto construct");
     }
@@ -29,9 +31,13 @@ public class AutoConstruction extends AnAction {
         Project project = anActionEvent.getData(PlatformDataKeys.PROJECT);
         String basePath = project.getBasePath();
 
-        // 1 生成page.iml
+        // 生成page.iml
         createPageIml(basePath);
-        rewritePageBuildProperties(basePath + File.separator + "HTEIP-page" + File.separator + "build.properties");
+
+        // 修改HTEIP-page/build.properties
+        createPageBuildProperties(basePath + File.separator + "HTEIP-page" + File.separator + "build.properties");
+
+        // 重命名build.xml
         renameBuildXml(basePath + File.separator + "HTEIP-page");
 
         // 2 生成模块iml
@@ -46,7 +52,7 @@ public class AutoConstruction extends AnAction {
                         && !folder.getName().equals("HTEIP-page")) {
                     createModuleIml(basePath, folder.getName());
                     createBin(folder.getPath());
-                    rewriteModuleBuildProperties(folder.getPath() + File.separator + "build.properties");
+                    createModuleBuildProperties(folder.getPath() + File.separator + "build.properties");
                     renameBuildXml(folder.getPath());
 
                     moduleFolders.add(folder.getName());
@@ -54,112 +60,92 @@ public class AutoConstruction extends AnAction {
             }
         }
 
-        // 3 创建artifacts
+        // 创建artifacts
         createArtifacts(basePath);
 
-        // 4 创建libraries
+        // 创建libraries
         createLibraries(basePath);
 
-        // 5 创建ant.xml
+        // 创建ant.xml
         createAntXml(basePath, moduleFolders);
 
-        // 6 改写misc.xml
-        rewriteMiscXml(basePath);
+        // 创建misc.xml
+        createMiscXml(basePath);
 
-        // 7 改写modules.xml
-        rewriteModulesXml(basePath, moduleFolders);
+        // 创建modules.xml
+        createModulesXml(basePath, moduleFolders);
 
-        // 改写workspace.xml
-        rewriteWorkspaceXml(basePath);
+        // 创建vcs.xml
+        createVcsXml(basePath);
 
+        // 创建workspace.xml
+//        createWorkspaceXml(basePath);
+
+
+        // 修复web.xml
+        repairWebXml(basePath);
+
+        // 解压zip
+        unzipJars(basePath);
     }
 
-    private void rewriteWorkspaceXml(String basePath) {
+
+    /**
+     * 生成page.iml文件
+     *
+     * @param basePath 项目路径
+     * @throws JDOMException
+     * @throws IOException
+     */
+    private void createPageIml(String basePath) {
         try {
-            Document config = new SAXReader().read(getClass().getResource("/config_template.xml"));
-            Element tomcatConfig = config.elementByID("tomcatConfig");
+            URL pageImlTpl = getClass().getResource("/tpl/page-iml.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(pageImlTpl);
+            Element rootElement = document.getRootElement();
+            List<Element> components = rootElement.getChildren();
+            for (Element component : components) {
+                if (!"NewModuleRootManager".equals(component.getAttributeValue("name"))) {
+                    continue;
+                }
 
-            Document workspace = new SAXReader().read(new File(basePath + File.separator + ".idea" + File.separator + "workspace.xml"));
-            List list = workspace.selectSingleNode("//component").getParent().elements();
-            list.add(tomcatConfig);
+                List<Element> orderEntrys = component.getChildren("orderEntry");
+                for (Element orderEntry : orderEntrys) {
+                    if (!"library".equals(orderEntry.getAttributeValue("type"))
+                            || !"application_server_libraries".equals(orderEntry.getAttributeValue("level"))) {
+                        continue;
+                    }
 
-            XMLWriter writer = null;
-            SAXReader reader = new SAXReader();
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
-            writer = new XMLWriter(new FileWriter(new File(basePath + File.separator + ".idea" + File.separator + "workspace.xml")), format);
-            writer.write(workspace);
-            writer.close();
+                    orderEntry.setAttribute("name", TOMCAT_NAME);
+                }
+            }
 
+            FileWriter fileWriter = new FileWriter(basePath + File.separator + "HTEIP-page" + File.separator + "HTEIP-page.iml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(document, fileWriter);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    private void createPageIml(String basePath) {
+
+    private void createPageBuildProperties(String path) {
         try {
-            XMLWriter writer = null;
-            SAXReader reader = new SAXReader();
+            FileWriter fileWriter = new FileWriter(path);
+            fileWriter.write("eip.web.path=WebRoot" + System.lineSeparator() + "eip.jar.path=../HTEIP-jar" + System.lineSeparator() + "init.modules=all");
+            fileWriter.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
-
-            String filePath = basePath + File.separator + "HTEIP-page" + File.separator + "HTEIP-page.iml";
-            File file = new File(filePath);
+    private void renameBuildXml(String path) {
+        try {
+            File file = new File(path + File.separator + "build.xml");
             if (file.exists()) {
-                file.delete();
+                String target = path + File.separator + new File(file.getParent()).getName() + "-build.xml";
+                file.renameTo(new File(target));
             }
-
-            Document _document = DocumentHelper.createDocument();
-            Element _module = _document.addElement("module")
-                    .addAttribute("type", "JAVA_MODULE")
-                    .addAttribute("version", "4");
-
-            Element _facetManager = _module.addElement("component")
-                    .addAttribute("name", "FacetManager");
-
-            Element _facet = _facetManager.addElement("facet")
-                    .addAttribute("type", "web")
-                    .addAttribute("name", "web");
-
-            Element _configuration = _facet.addElement("configuration");
-            _configuration.addElement("descriptors")
-                    .addElement("deploymentDescriptor")
-                    .addAttribute("name", "web.xml")
-                    .addAttribute("url", "file://$MODULE_DIR$/WebRoot/WEB-INF/web.xml");
-            _configuration.addElement("webroots")
-                    .addElement("root")
-                    .addAttribute("url", "file://$MODULE_DIR$/WebRoot")
-                    .addAttribute("relative", "/");
-
-            Element _newModuleRootManager = _module.addElement("component");
-            _newModuleRootManager.addElement("output")
-                    .addAttribute("url", "file://$MODULE_DIR$/WebRoot/WEB-INF/classes");
-            _newModuleRootManager.addElement("exclude-output");
-            _newModuleRootManager.addElement("content")
-                    .addAttribute("url", "file://$MODULE_DIR$")
-                    .addElement("sourceFolder")
-                    .addAttribute("url", "file://$MODULE_DIR$/src")
-                    .addAttribute("isTestSource", "false");
-
-            _newModuleRootManager.addElement("orderEntry")
-                    .addAttribute("type", "inheritedJdk");
-            _newModuleRootManager.addElement("orderEntry")
-                    .addAttribute("type", "sourceFolder")
-                    .addAttribute("forTests", "false");
-            _newModuleRootManager.addElement("orderEntry")
-                    .addAttribute("type", "library")
-                    .addAttribute("scope", "PROVIDED")
-                    .addAttribute("name", "Tomcat 6.0.9") // todo 作为配置项
-                    .addAttribute("level", "application_server_libraries");
-            _newModuleRootManager.addElement("orderEntry")
-                    .addAttribute("type", "library")
-                    .addAttribute("name", "lib")
-                    .addAttribute("level", "project");
-
-            writer = new XMLWriter(new FileWriter(file), format);
-            writer.write(_document);
-            writer.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -167,49 +153,25 @@ public class AutoConstruction extends AnAction {
 
     private void createModuleIml(String basePath, String module) {
         try {
-            XMLWriter writer = null;
-            SAXReader reader = new SAXReader();
+            URL moduleImlTpl = getClass().getResource("/tpl/moudle-iml.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(moduleImlTpl);
+            Element rootElement = document.getRootElement();
+            Element component = rootElement.getChild("component");
 
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
+            List<Element> orderEntrys = component.getChildren("orderEntry");
+            for (Element orderEntry : orderEntrys) {
+                if (!"library".equals(orderEntry.getAttributeValue("type"))
+                        || !"application_server_libraries".equals(orderEntry.getAttributeValue("level"))) {
+                    continue;
+                }
 
-            String filePath = basePath + File.separator + module + File.separator + module + ".iml";
-            File file = new File(filePath);
-            Document _document = DocumentHelper.createDocument();
+                orderEntry.setAttribute("name", TOMCAT_NAME);
+            }
 
-            Element _module = _document.addElement("module")
-                    .addAttribute("type", "JAVA_MODULE")
-                    .addAttribute("version", "4");
-
-            Element _component = _module.addElement("component")
-                    .addAttribute("name", "NewModuleRootManager");
-
-            _component.addElement("output")
-                    .addAttribute("url", "file://$MODULE_DIR$/bin");
-            _component.addElement("exclude-output");
-            _component.addElement("content")
-                    .addAttribute("url", "file://$MODULE_DIR$")
-                    .addElement("sourceFolder")
-                    .addAttribute("url", "file://$MODULE_DIR$/src")
-                    .addAttribute("isTestSource", "false");
-            _component.addElement("orderEntry")
-                    .addAttribute("type", "inheritedJdk");
-            _component.addElement("orderEntry")
-                    .addAttribute("type", "sourceFolder")
-                    .addAttribute("forTests", "false");
-            _component.addElement("orderEntry")
-                    .addAttribute("type", "library")
-                    .addAttribute("scope", "PROVIDED")
-                    .addAttribute("name", "Tomcat 6.0.9")
-                    .addAttribute("level", "application_server_libraries");
-            _component.addElement("orderEntry")
-                    .addAttribute("type", "library")
-                    .addAttribute("name", "lib")
-                    .addAttribute("level", "project");
-
-            writer = new XMLWriter(new FileWriter(file), format);
-            writer.write(_document);
-            writer.close();
+            FileWriter fileWriter = new FileWriter(basePath + File.separator + module + File.separator + module + ".iml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(document, fileWriter);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -226,17 +188,8 @@ public class AutoConstruction extends AnAction {
         }
     }
 
-    private void rewritePageBuildProperties(String path) {
-        try {
-            FileWriter fileWriter = new FileWriter(path);
-            fileWriter.write("eip.web.path=WebRoot" + System.lineSeparator() + "eip.jar.path=../HTEIP-jar" + System.lineSeparator() + "init.modules=all");
-            fileWriter.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
 
-    private void rewriteModuleBuildProperties(String path) {
+    private void createModuleBuildProperties(String path) {
         try {
             StringBuffer stringBuffer = new StringBuffer();
             BufferedReader bufferedReader = new BufferedReader(new FileReader(path));
@@ -267,17 +220,6 @@ public class AutoConstruction extends AnAction {
         }
     }
 
-    private void renameBuildXml(String path) {
-        try {
-            File file = new File(path + File.separator + "build.xml");
-            if (file.exists()) {
-                String target = path + File.separator + new File(file.getParent()).getName() + "-build.xml";
-                file.renameTo(new File(target));
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
 
     private void createArtifacts(String basePath) {
         try {
@@ -286,52 +228,13 @@ public class AutoConstruction extends AnAction {
                 artifacts.mkdir();
             }
 
-            File artifactsXml = new File(artifacts.getPath() + File.separator + "HTEIP_page_war_exploded.xml");
+            URL artifactsTpl = getClass().getResource("/tpl/artifacts.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(artifactsTpl);
 
-            XMLWriter writer = null;
-            SAXReader reader = new SAXReader();
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
-            Document _document = DocumentHelper.createDocument();
-
-            Element _artifact = _document.addElement("component")
-                    .addAttribute("name", "ArtifactManager")
-                    .addElement("artifact")
-                    .addAttribute("type", "exploded-war")
-                    .addAttribute("name", "HTEIP-page:war exploded");
-
-            _artifact.addElement("output-path")
-                    .addText("$PROJECT_DIR$/HTEIP-page/WebRoot");
-
-            Element _root = _artifact.addElement("root")
-                    .addAttribute("id", "root");
-
-            Element _element = _root.addElement("element")
-                    .addAttribute("id", "directory")
-                    .addAttribute("name", "WEB-INF");
-
-            _element.addElement("element")
-                    .addAttribute("id", "directory")
-                    .addAttribute("name", "classes")
-                    .addElement("element")
-                    .addAttribute("id", "module-output")
-                    .addAttribute("name", "HTEIP-page");
-            _element.addElement("element")
-                    .addAttribute("id", "directory")
-                    .addAttribute("name", "lib")
-                    .addElement("element")
-                    .addAttribute("id", "library")
-                    .addAttribute("level", "project")
-                    .addAttribute("name", "lib");
-
-            _root.addElement("element")
-                    .addAttribute("id", "javaee-facet-resources")
-                    .addAttribute("facet", "HTEIP-page/web/Web");
-
-            writer = new XMLWriter(new FileWriter(artifactsXml), format);
-            writer.write(_document);
-            writer.close();
-
+            FileWriter fileWriter = new FileWriter(artifacts.getPath() + File.separator + "HTEIP_page_war_exploded.xml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(document, fileWriter);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -344,37 +247,13 @@ public class AutoConstruction extends AnAction {
                 libraries.mkdir();
             }
 
-            File libXml = new File(libraries.getPath() + File.separator + "lib.xml");
+            URL pageLibTpl = getClass().getResource("/tpl/page-lib.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(pageLibTpl);
 
-            XMLWriter writer = null;
-            SAXReader reader = new SAXReader();
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
-            Document _document = DocumentHelper.createDocument();
-
-            Element _library = _document.addElement("component")
-                    .addAttribute("name", "libraryTable")
-                    .addElement("library")
-                    .addAttribute("name", "lib");
-            _library.addElement("CLASSES")
-                    .addElement("root")
-                    .addAttribute("url", "file://$PROJECT_DIR$/HTEIP-page/WebRoot/WEB-INF/lib");
-            _library.addElement("JAVADOC");
-            _library.addElement("SOURCES")
-                    .addElement("root")
-                    .addAttribute("url", "file://$PROJECT_DIR$/HTEIP-page/WebRoot/WEB-INF/lib");
-            _library.addElement("jarDirectory")
-                    .addAttribute("url", "file://$PROJECT_DIR$/HTEIP-page/WebRoot/WEB-INF/lib")
-                    .addAttribute("recursive", "false");
-            _library.addElement("jarDirectory")
-                    .addAttribute("url", "file://$PROJECT_DIR$/HTEIP-page/WebRoot/WEB-INF/lib")
-                    .addAttribute("recursive", "false")
-                    .addAttribute("type", "SOURCES");
-
-            writer = new XMLWriter(new FileWriter(libXml), format);
-            writer.write(_document);
-            writer.close();
-
+            FileWriter fileWriter = new FileWriter(libraries.getPath() + File.separator + "page_lib.xml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(document, fileWriter);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -382,106 +261,169 @@ public class AutoConstruction extends AnAction {
 
     private void createAntXml(String basePath, List<String> moduleFolders) {
         try {
-            File libXml = new File(basePath + File.separator + ".idea" + File.separator + "ant.xml");
-
-            XMLWriter writer = null;
-            SAXReader reader = new SAXReader();
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
-            Document _document = DocumentHelper.createDocument();
-
-            Element _component = _document.addElement("project")
-                    .addAttribute("version", "4")
-                    .addElement("component")
-                    .addAttribute("name", "AntConfiguration");
-
-            _component.addElement("buildFile")
-                    .addAttribute("url", "file://$PROJECT_DIR$/HTEIP-page/HTEIP-page-build.xml");
+            URL antTpl = getClass().getResource("/tpl/ant.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(antTpl);
+            Element rootElement = document.getRootElement();
+            Element component = rootElement.getChild("component");
 
             for (String folder : moduleFolders) {
-                _component.addElement("buildFile")
-                        .addAttribute("url", "file://$PROJECT_DIR$/" + folder + "/" + folder + "-build.xml");
+                Element buildFile = new Element("buildFile");
+                buildFile.setAttribute("url", "file://$PROJECT_DIR$/" + folder + "/" + folder + "-build.xml");
+                component.addContent(buildFile);
             }
 
-            writer = new XMLWriter(new FileWriter(libXml), format);
-            writer.write(_document);
-            writer.close();
+            FileWriter fileWriter = new FileWriter(basePath + File.separator + ".idea"
+                    + File.separator + "ant.xml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(document, fileWriter);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    private void rewriteMiscXml(String basePath) {
+    private void createMiscXml(String basePath) {
         try {
-            File libXml = new File(basePath + File.separator + ".idea" + File.separator + "misc.xml");
-            if (libXml.exists()) {
-                libXml.delete();
-            }
+            URL miscTpl = getClass().getResource("/tpl/misc.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(miscTpl);
 
-            XMLWriter writer = null;
-            SAXReader reader = new SAXReader();
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
-            Document _document = DocumentHelper.createDocument();
-
-            Element _project = _document.addElement("project")
-                    .addAttribute("version", "4");
-
-            _project.addElement("component")
-                    .addAttribute("name", "ProjectRootManager")
-                    .addAttribute("version", "2")
-                    .addAttribute("languageLevel", "JDK_1_6")
-                    .addAttribute("default", "false")
-                    .addAttribute("project-jdk-name", "1.6")
-                    .addAttribute("project-jdk-type", "JavaSDK")
-                    .addElement("output")
-                    .addAttribute("url", "file://$PROJECT_DIR$");
-
-            _project.addElement("component")
-                    .addAttribute("name", "SvnBranchConfigurationManager")
-                    .addElement("option")
-                    .addAttribute("name", "mySupportsUserInfoFilter")
-                    .addAttribute("value", "true");
-
-            writer = new XMLWriter(new FileWriter(libXml), format);
-            writer.write(_document);
-            writer.close();
+            FileWriter fileWriter = new FileWriter(basePath + File.separator + ".idea"
+                    + File.separator + "misc.xml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(document, fileWriter);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    private void rewriteModulesXml(String basePath, List<String> moduleFolders) {
+    private void createModulesXml(String basePath, List<String> moduleFolders) {
         try {
-            File libXml = new File(basePath + File.separator + ".idea" + File.separator + "modules.xml");
-
-            XMLWriter writer = null;
-            SAXReader reader = new SAXReader();
-            OutputFormat format = OutputFormat.createPrettyPrint();
-            format.setEncoding("UTF-8");
-            Document _document = DocumentHelper.createDocument();
-
-            Element _modules = _document.addElement("project")
-                    .addAttribute("version", "4")
-                    .addElement("component")
-                    .addAttribute("name", "ProjectModuleManager")
-                    .addElement("modules");
-
-            _modules.addElement("module")
-                    .addAttribute("fileurl", "file://$PROJECT_DIR$/HTEIP-page/HTEIP-page.iml")
-                    .addAttribute("filepath", "$PROJECT_DIR$/HTEIP-page/HTEIP-page.iml");
+            URL modulesTpl = getClass().getResource("/tpl/modules.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(modulesTpl);
+            Element rootElement = document.getRootElement();
+            Element component = rootElement.getChild("component");
+            Element modules = component.getChild("modules");
 
             for (String folder : moduleFolders) {
-                _modules.addElement("module")
-                        .addAttribute("fileurl", "file://$PROJECT_DIR$/" + folder + "/" + folder + ".iml")
-                        .addAttribute("filepath", "$PROJECT_DIR$/" + folder + "/" + folder + ".iml");
+                Element buildFile = new Element("module");
+                buildFile.setAttribute("fileurl", "file://$PROJECT_DIR$/" + folder + "/" + folder + ".iml");
+                buildFile.setAttribute("filepath", "$PROJECT_DIR$/" + folder + "/" + folder + ".iml");
+                modules.addContent(buildFile);
             }
 
-            writer = new XMLWriter(new FileWriter(libXml), format);
-            writer.write(_document);
-            writer.close();
+            FileWriter fileWriter = new FileWriter(basePath + File.separator + ".idea"
+                    + File.separator + "modules.xml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(document, fileWriter);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
+
+
+    private void createVcsXml(String basePath) {
+        try {
+            URL miscTpl = getClass().getResource("/tpl/vcs.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(miscTpl);
+
+            FileWriter fileWriter = new FileWriter(basePath + File.separator + ".idea"
+                    + File.separator + "vcs.xml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(document, fileWriter);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void createWorkspaceXml(String basePath) {
+        try {
+            File projectFolder = new File(basePath);
+            String projectName = projectFolder.getName();
+
+            URL tomcatTpl = getClass().getResource("/tpl/tomcat.xml");
+            SAXBuilder saxBuilder = new SAXBuilder();
+            Document document = saxBuilder.build(tomcatTpl);
+            Element rootElement = document.getRootElement();
+            Element configuration = rootElement.getChild("configuration");
+            Element serverSettings = configuration.getChild("server-settings");
+            Element option = serverSettings.getChild("option");
+            option.setAttribute("value", projectName);
+
+            File workspace = new File(basePath + File.separator + ".idea" + File.separator + "workspace.xml");
+            SAXBuilder workspaceSaxBuilder = new SAXBuilder();
+            Document workspaceDocument = workspaceSaxBuilder.build(workspace);
+            Element workspaceRootElement = workspaceDocument.getRootElement();
+            Element runManager = (Element) XPath.selectSingleNode(workspaceRootElement, "//component[@name='RunManager']");
+            runManager.setAttribute("selected", "Tomcat Server.tomcat6");
+            runManager.addContent(configuration.clone());
+            workspaceRootElement.removeChildren("component");
+            workspaceRootElement.addContent(runManager.clone());
+
+            FileWriter fileWriter = new FileWriter(basePath + File.separator + ".idea" + File.separator + "workspace2.xml");
+            XMLOutputter xmlOutputter = new XMLOutputter();
+            xmlOutputter.output(workspaceDocument, fileWriter);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void repairWebXml(String basePath) {
+        try {
+            File webXml = new File(basePath + File.separator + "HTEIP-page" + File.separator + "WebRoot"
+                    + File.separator + "WEB-INF" + File.separator + "web.xml");
+            FileInputStream fileInputStream = new FileInputStream(webXml);
+            InputStreamReader inputStreamReader = new InputStreamReader(fileInputStream, "UTF-8");
+            BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+            StringBuffer stringBuffer = new StringBuffer();
+            String temp = null;
+            while ((temp = bufferedReader.readLine()) != null) {
+                if (temp.indexOf("<url-pattern>*</url-pattern>") != -1) {
+                    temp = "<url-pattern>/*</url-pattern>";
+                }
+
+                stringBuffer.append(temp);
+                stringBuffer.append(System.lineSeparator());
+            }
+            bufferedReader.close();
+
+
+            FileOutputStream fileOutputStream = new FileOutputStream(basePath + File.separator + "HTEIP-page" + File.separator + "WebRoot"
+                    + File.separator + "WEB-INF" + File.separator + "web.xml");
+            OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream, "utf-8");
+            outputStreamWriter.append(stringBuffer);
+            outputStreamWriter.flush();
+            outputStreamWriter.close();
+            fileOutputStream.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void unzipJars(String basePath) {
+        try {
+            /*File source = new File(basePath + File.separator + "HTEIP-jar");
+            File[] jars = source.listFiles();
+            File target = new File(basePath + File.separator + "HTEIP-page" + File.separator + "WebRoot");
+
+            for (File file : jars) {
+               unzip(file.getPath(), target.getPath());
+            }*/
+
+            /*File buildXml = new File(basePath + File.separator + "HTEIP-page" + File.separator + "HTEIP-page-build.xml");
+            org.apache.tools.ant.Project project = new org.apache.tools.ant.Project();
+            project.fireBuildStarted();
+            project.init();
+            ProjectHelper projectHelper = ProjectHelper.getProjectHelper();
+            projectHelper.parse(project, buildXml);
+            project.executeTarget(project.getDefaultTarget());
+            project.fireBuildFinished(null);*/
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
 }

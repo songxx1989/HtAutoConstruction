@@ -1,0 +1,16 @@
+<component name="ArtifactManager">
+    <artifact type="exploded-war" name="HTEIP-page:war exploded">
+        <output-path>$PROJECT_DIR$/HTEIP-page/WebRoot</output-path>
+        <root id="root">
+            <element id="directory" name="WEB-INF">
+                <element id="directory" name="classes">
+                    <element id="module-output" name="HTEIP-page" />
+                </element>
+                <element id="directory" name="lib">
+                    <element id="library" level="project" name="page-lib" />
+                </element>
+            </element>
+            <element id="javaee-facet-resources" facet="HTEIP-page/web/Web" />
+        </root>
+    </artifact>
+</component>
