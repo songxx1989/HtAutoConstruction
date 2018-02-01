@@ -3,7 +3,6 @@ package net.huatech.autoconstruction;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
-import com.intellij.openapi.project.Project;
 import net.huatech.autoconstruction.utils.Config;
 import net.huatech.autoconstruction.utils.SXml;
 import org.jdom.Element;
@@ -19,50 +18,27 @@ import java.util.List;
 
 
 public class AutoConstruction extends AnAction {
+    private String basePath = null;
+
     public AutoConstruction() {
         super("auto construct");
     }
 
     @Override
     public void actionPerformed(AnActionEvent anActionEvent) {
-        Project project = anActionEvent.getData(PlatformDataKeys.PROJECT);
-        String basePath = project.getBasePath();
+        basePath = anActionEvent.getData(PlatformDataKeys.PROJECT).getBasePath();
 
         // page
-        disposePage(basePath);
+        disposePage();
 
-        // module
-        List<String> moduleFolders = disposeModule(basePath);
+        // modules
+        List<String> moduleFolders = disposeModule();
 
         // idea
-        disposeIdea(basePath, moduleFolders);
+        disposeIdea(moduleFolders);
     }
 
-    private void disposeIdea(String basePath, List<String> moduleFolders) {
-        // 创建artifacts
-        copyXml(getClass().getResource("/tpl/artifacts.xml"),
-                basePath + File.separator + ".idea" + File.separator + "artifacts" + File.separator + "HTEIP_page_war_exploded.xml");
-
-        // 创建libraries
-        copyXml(getClass().getResource("/tpl/page-lib.xml"),
-                basePath + File.separator + ".idea" + File.separator + "libraries" + File.separator + "page_lib.xml");
-
-        // 创建ant.xml
-        createAntXml(basePath, moduleFolders);
-
-        // 创建misc.xml
-        copyXml(getClass().getResource("/tpl/misc.xml"),
-                basePath + File.separator + ".idea" + File.separator + "misc.xml");
-
-        // 创建modules.xml
-        createModulesXml(basePath, moduleFolders);
-
-        // 创建vcs.xml
-        copyXml(getClass().getResource("/tpl/vcs.xml"),
-                basePath + File.separator + ".idea" + File.separator + "vcs.xml");
-    }
-
-    private void disposePage(String basePath) {
+    private void disposePage() {
         // 生成page.iml
         createPageIml(basePath);
 
@@ -76,8 +52,7 @@ public class AutoConstruction extends AnAction {
         repairWebXml(basePath);
     }
 
-    @NotNull
-    private List<String> disposeModule(String basePath) {
+    private List<String> disposeModule() {
         File baseFolder = new File(basePath);
         List<String> moduleFolders = new ArrayList<String>();
         if (baseFolder.exists()) {
@@ -87,7 +62,7 @@ public class AutoConstruction extends AnAction {
                         && folder.getName().indexOf("HTEIP") == 0
                         && !folder.getName().equals("HTEIP-jar")
                         && !folder.getName().equals("HTEIP-page")) {
-                    createModuleIml(basePath, folder.getName());
+                    createModuleIml(folder.getName());
                     createBin(folder.getPath());
                     createModuleBuildProperties(folder.getPath() + File.separator + "build.properties");
                     renameBuildXml(folder.getPath());
@@ -99,6 +74,29 @@ public class AutoConstruction extends AnAction {
         return moduleFolders;
     }
 
+    private void disposeIdea(List<String> moduleFolders) {
+        // 创建artifacts
+        copyXml(getClass().getResource("/tpl/artifacts.xml"),
+                basePath + File.separator + ".idea" + File.separator + "artifacts" + File.separator + "HTEIP_page_war_exploded.xml");
+
+        // 创建libraries
+        copyXml(getClass().getResource("/tpl/page-lib.xml"),
+                basePath + File.separator + ".idea" + File.separator + "libraries" + File.separator + "page_lib.xml");
+
+        // 创建ant.xml
+        createAntXml(moduleFolders);
+
+        // 创建misc.xml
+        copyXml(getClass().getResource("/tpl/misc.xml"),
+                basePath + File.separator + ".idea" + File.separator + "misc.xml");
+
+        // 创建modules.xml
+        createModulesXml(moduleFolders);
+
+        // 创建vcs.xml
+        copyXml(getClass().getResource("/tpl/vcs.xml"),
+                basePath + File.separator + ".idea" + File.separator + "vcs.xml");
+    }
 
     private void createPageIml(String basePath) {
         try {
@@ -116,7 +114,6 @@ public class AutoConstruction extends AnAction {
             e.printStackTrace();
         }
     }
-
 
     private void createPageBuildProperties(String path) {
         try {
@@ -139,7 +136,7 @@ public class AutoConstruction extends AnAction {
         }
     }
 
-    private void createModuleIml(String basePath, String module) {
+    private void createModuleIml(String module) {
         try {
             // 若module.iml存在，则不创建
             File moduleIml = new File(basePath + File.separator + module + File.separator + module + ".iml");
@@ -166,7 +163,6 @@ public class AutoConstruction extends AnAction {
             e.printStackTrace();
         }
     }
-
 
     private void createModuleBuildProperties(String path) {
         try {
@@ -212,7 +208,7 @@ public class AutoConstruction extends AnAction {
         }
     }
 
-    private void createAntXml(String basePath, List<String> moduleFolders) {
+    private void createAntXml(List<String> moduleFolders) {
         try {
             // 若ant.xml已存在则不重复创建
             File antXml = new File(basePath + File.separator + ".idea" + File.separator + "ant.xml");
@@ -233,8 +229,7 @@ public class AutoConstruction extends AnAction {
         }
     }
 
-
-    private void createModulesXml(String basePath, List<String> moduleFolders) {
+    private void createModulesXml(List<String> moduleFolders) {
         try {
             File modulesXml = new File(basePath + File.separator + ".idea" + File.separator + "modules.xml");
             if (modulesXml.exists()) {
@@ -253,7 +248,6 @@ public class AutoConstruction extends AnAction {
             e.printStackTrace();
         }
     }
-
 
     private void repairWebXml(String basePath) {
         try {
