@@ -4,8 +4,10 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.project.Project;
+import net.huatech.autoconstruction.utils.Config;
 import net.huatech.autoconstruction.utils.SXml;
 import org.jdom.Element;
+import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
 import java.net.URL;
@@ -14,10 +16,6 @@ import java.util.List;
 
 
 public class AutoConstruction extends AnAction {
-    // 配置项
-    // 1 tomcat
-    String TOMCAT_NAME = "Tomcat 6.0.9";
-
     public AutoConstruction() {
         super("auto construct");
     }
@@ -96,7 +94,7 @@ public class AutoConstruction extends AnAction {
 
             SXml sXml = new SXml(getClass().getResource("/tpl/page-iml.xml"));
             sXml.querySelector("//orderEntry[@type='library'][@level='application_server_libraries']")
-                    .setAttribute("name", TOMCAT_NAME);
+                    .setAttribute("name", Config.getTomcatName());
             sXml.save(pageIml);
         } catch (Exception e) {
             e.printStackTrace();
@@ -135,7 +133,7 @@ public class AutoConstruction extends AnAction {
 
             SXml sXml = new SXml(getClass().getResource("/tpl/moudle-iml.xml"));
             sXml.querySelector("//orderEntry[@type='library'][@level='application_server_libraries']")
-                    .setAttribute("name", TOMCAT_NAME);
+                    .setAttribute("name", Config.getTomcatName());
             sXml.save(basePath + File.separator + module + File.separator + module + ".iml");
         } catch (Exception e) {
             e.printStackTrace();
