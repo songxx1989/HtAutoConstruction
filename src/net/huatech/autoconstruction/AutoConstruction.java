@@ -7,9 +7,12 @@ import com.intellij.openapi.project.Project;
 import net.huatech.autoconstruction.utils.Config;
 import net.huatech.autoconstruction.utils.SXml;
 import org.jdom.Element;
-import org.yaml.snakeyaml.Yaml;
+import org.jetbrains.annotations.NotNull;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,35 +28,17 @@ public class AutoConstruction extends AnAction {
         Project project = anActionEvent.getData(PlatformDataKeys.PROJECT);
         String basePath = project.getBasePath();
 
-        // 生成page.iml
-        createPageIml(basePath);
+        // page
+        disposePage(basePath);
 
-        // 修改HTEIP-page/build.properties
-        createPageBuildProperties(basePath + File.separator + "HTEIP-page" + File.separator + "build.properties");
+        // module
+        List<String> moduleFolders = disposeModule(basePath);
 
-        // 重命名build.xml
-        renameBuildXml(basePath + File.separator + "HTEIP-page");
+        // idea
+        disposeIdea(basePath, moduleFolders);
+    }
 
-        // 2 生成模块iml
-        File baseFolder = new File(basePath);
-        List<String> moduleFolders = new ArrayList<String>();
-        if (baseFolder.exists()) {
-            File[] folders = baseFolder.listFiles();
-            for (File folder : folders) {
-                if (folder.isDirectory()
-                        && folder.getName().indexOf("HTEIP") == 0
-                        && !folder.getName().equals("HTEIP-jar")
-                        && !folder.getName().equals("HTEIP-page")) {
-                    createModuleIml(basePath, folder.getName());
-                    createBin(folder.getPath());
-                    createModuleBuildProperties(folder.getPath() + File.separator + "build.properties");
-                    renameBuildXml(folder.getPath());
-
-                    moduleFolders.add(folder.getName());
-                }
-            }
-        }
-
+    private void disposeIdea(String basePath, List<String> moduleFolders) {
         // 创建artifacts
         copyXml(getClass().getResource("/tpl/artifacts.xml"),
                 basePath + File.separator + ".idea" + File.separator + "artifacts" + File.separator + "HTEIP_page_war_exploded.xml");
@@ -75,12 +60,43 @@ public class AutoConstruction extends AnAction {
         // 创建vcs.xml
         copyXml(getClass().getResource("/tpl/vcs.xml"),
                 basePath + File.separator + ".idea" + File.separator + "vcs.xml");
+    }
+
+    private void disposePage(String basePath) {
+        // 生成page.iml
+        createPageIml(basePath);
+
+        // 修改HTEIP-page/build.properties
+        createPageBuildProperties(basePath + File.separator + "HTEIP-page" + File.separator + "build.properties");
+
+        // 重命名build.xml
+        renameBuildXml(basePath + File.separator + "HTEIP-page");
 
         // 修复web.xml
         repairWebXml(basePath);
+    }
 
-        // 解压zip
-        unzipJars(basePath);
+    @NotNull
+    private List<String> disposeModule(String basePath) {
+        File baseFolder = new File(basePath);
+        List<String> moduleFolders = new ArrayList<String>();
+        if (baseFolder.exists()) {
+            File[] folders = baseFolder.listFiles();
+            for (File folder : folders) {
+                if (folder.isDirectory()
+                        && folder.getName().indexOf("HTEIP") == 0
+                        && !folder.getName().equals("HTEIP-jar")
+                        && !folder.getName().equals("HTEIP-page")) {
+                    createModuleIml(basePath, folder.getName());
+                    createBin(folder.getPath());
+                    createModuleBuildProperties(folder.getPath() + File.separator + "build.properties");
+                    renameBuildXml(folder.getPath());
+
+                    moduleFolders.add(folder.getName());
+                }
+            }
+        }
+        return moduleFolders;
     }
 
 
@@ -250,14 +266,4 @@ public class AutoConstruction extends AnAction {
             e.printStackTrace();
         }
     }
-
-    private void unzipJars(String basePath) {
-        try {
-            // todo 重新实现
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-
 }
