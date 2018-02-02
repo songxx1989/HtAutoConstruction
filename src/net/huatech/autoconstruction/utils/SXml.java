@@ -70,6 +70,11 @@ public class SXml {
      * @throws IOException
      */
     public void save(File targetFile) throws IOException {
+        File parentFile = targetFile.getParentFile();
+        if(!parentFile.exists()){
+            parentFile.mkdir();
+        }
+
         FileWriter fileWriter = new FileWriter(targetFile);
         XMLOutputter xmlOutputter = new XMLOutputter();
         xmlOutputter.output(document, fileWriter);
